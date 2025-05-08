@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory Management App</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f0f4f8;
+      color: #333;
+    }
+    .card {
+      background: #fff;
+      padding: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      margin: 1rem auto;
+      max-width: 90%;
+    }
+    .auth-container {
+      max-width: 400px;
+      margin: 2rem auto;
+      text-align: center;
+    }
+    input, textarea {
+      width: 90%;
+      padding: 0.5rem;
+      margin: 0.5rem 0;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    button {
+      padding: 0.6rem 1.2rem;
+      margin: 0.3rem;
+      border: none;
+      background-color: #4f46e5;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #4338ca;
+    }
+    nav {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      background: #ffffff;
+      border-top: 1px solid #ddd;
+      display: flex;
+      justify-content: space-around;
+      padding: 0.5rem 0;
+    }
+    nav button {
+      flex: 1;
+      background: none;
+      border: none;
+      font-size: 1rem;
+      padding: 0.5rem;
+    }
+    .hidden {
+      display: none;
+    }
+    .search-bar {
+      display: flex;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .search-bar input {
+      flex: 1;
+      padding: 0.5rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+    .search-bar button {
+      margin-left: 0.5rem;
+    }
+  </style>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.7.0/firebase-app.js";
+    import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/11.7.0/firebase-database.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      sendPasswordResetEmail,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/11.7.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDeIh2LtZPWZSV-7Byi8vBM6LSSHKtsOUQ",
+      authDomain: "inventoryapp-7817a.firebaseapp.com",
+      projectId: "inventoryapp-7817a",
+      storageBucket: "inventoryapp-7817a.firebasestorage.app",
+      messagingSenderId: "215115769523",
+      appId: "1:215115769523:web:e03fb2c2c8c10e05fc32c6",
+      measurementId: "G-P1N3DMRCLG"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    let userUID = null;
+
+    function dbPath(path) {
+      return `users/${userUID}/${path}`;
+    }
+
+    function saveData(data) {
+      if (!userUID) return;
+      localStorage.setItem('inventoryData', JSON.stringify(data));
+      set(ref(db, dbPath('inventoryData')), data);
+    }
+
+    function loadData() {
+      return new Promise((resolve, reject) => {
+        if (!userUID) return resolve(null);
+        get(child(ref(db), dbPath('inventoryData')))
+          .then((snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.val();
+              localStorage.setItem('inventoryData', JSON.stringify(data));
+              resolve(data);
+            } else {
+              resolve(null);
+            }
+          })
+          .catch(reject);
+      });
+    }
+
+    function initializeInventoryApp() {
+      const appDiv = document.getElementById("app");
+      appDiv.innerHTML = `
+        <div class="card">
+          <div class="search-bar">
+            <input type="text" id="search" placeholder="Search item ID...">
+            <button onclick="performSearch()">Search</button>
+          </div>
+          <textarea id="itemId" placeholder="Enter Item ID"></textarea>
+          <button onclick="addItem()">Add Item</button>
+          <div id="inventory"></div>
+          <button onclick="exportCSV()">Export CSV</button>
+        </div>
+      `;
+
+      renderInventory();
+    }
+
+    function getInventory() {
+      return JSON.parse(localStorage.getItem('inventoryData')) || [];
+    }
+
+    function renderInventory(filtered = null) {
+      const inventory = filtered || getInventory();
+      const container = document.getElementById("inventory");
+      container.innerHTML = "<h3>Inventory</h3>" + inventory.map((item, i) => `
+        <div>
+          ${item.id} - ${item.status} <button onclick="sellItem(${i})">Sell</button>
+        </div>
+      `).join('');
+    }
+
+    window.addItem = function () {
+      const id = document.getElementById("itemId").value;
+      if (!id) return;
+      const data = getInventory();
+      data.push({ id, status: "in-stock" });
+      saveData(data);
+      renderInventory();
+      document.getElementById("itemId").value = "";
+    }
+
+    window.sellItem = function (index) {
+      const data = getInventory();
+      data[index].status = "sold";
+      saveData(data);
+      renderInventory();
+    }
+
+    window.performSearch = function () {
+      const query = document.getElementById("search").value.toLowerCase();
+      const data = getInventory();
+      const filtered = data.filter(item => item.id.toLowerCase().includes(query));
+      renderInventory(filtered);
+    }
+
+    window.exportCSV = function () {
+      const inventory = getInventory();
+      let csv = "Item ID,Status\n";
+      inventory.forEach(item => {
+        csv += `${item.id},${item.status}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'inventory.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    window.register = function () {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      createUserWithEmailAndPassword(auth, email, password)
+        .then(() => alert("Registered and logged in!"))
+        .catch(err => alert("Error: " + err.message));
+    }
+
+    window.login = function () {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      signInWithEmailAndPassword(auth, email, password)
+        .then(() => alert("Logged in!"))
+        .catch(err => alert("Login failed: " + err.message));
+    }
+
+    window.logout = function () {
+      signOut(auth).then(() => alert("Logged out."));
+    }
+
+    window.resetPassword = function () {
+      const email = document.getElementById("email").value;
+      if (!email) return alert("Please enter your email");
+      sendPasswordResetEmail(auth, email)
+        .then(() => alert("Password reset email sent!"))
+        .catch(err => alert("Error: " + err.message));
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      const app = document.getElementById("app");
+      const authSection = document.getElementById("auth-section");
+      const authStatus = document.getElementById("auth-status");
+      if (user) {
+        userUID = user.uid;
+        authSection.style.display = "none";
+        app.style.display = "block";
+        authStatus.textContent = `Logged in as ${user.email}`;
+        loadData().then(() => initializeInventoryApp());
+      } else {
+        userUID = null;
+        app.style.display = "none";
+        authSection.style.display = "block";
+        authStatus.textContent = "Not logged in";
+      }
+    });
+  </script>
+</head>
+<body>
+  <div id="auth-section" class="auth-container card">
+    <h2>Login or Register</h2>
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Password">
+    <div>
+      <button onclick="login()">Login</button>
+      <button onclick="register()">Register</button>
+    </div>
+    <button onclick="resetPassword()">Forgot Password?</button>
+    <button onclick="logout()">Logout</button>
+    <p id="auth-status"></p>
+  </div>
+
+  <div id="app" style="display: none;"></div>
+</body>
+</html>
